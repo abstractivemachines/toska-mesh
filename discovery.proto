@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package toskamesh.discovery;
+
+option csharp_namespace = "ToskaMesh.Grpc.Discovery";
+option go_package = "github.com/toska-mesh/toska-mesh/pkg/meshpb";
+
+message HealthCheckConfig {
+  string endpoint = 1;
+  int32 intervalSeconds = 2;
+  int32 timeoutSeconds = 3;
+  int32 unhealthyThreshold = 4;
+}
+
+enum HealthStatus {
+  HEALTH_STATUS_UNKNOWN = 0;
+  HEALTH_STATUS_HEALTHY = 1;
+  HEALTH_STATUS_UNHEALTHY = 2;
+  HEALTH_STATUS_DEGRADED = 3;
+}
+
+message RegisterServiceRequest {
+  string serviceName = 1;
+  string serviceId = 2;
+  string address = 3;
+  int32 port = 4;
+  map<string, string> metadata = 5;
+  HealthCheckConfig healthCheck = 6;
+}
+
+message RegisterServiceResponse {
+  bool success = 1;
+  string serviceId = 2;
+  string errorMessage = 3;
+}
+
+message DeregisterServiceRequest {
+  string serviceId = 1;
+}
+
+message DeregisterServiceResponse {
+  bool removed = 1;
+}
+
+message GetInstancesRequest {
+  string serviceName = 1;
+}
+
+message GetInstancesResponse {
+  repeated ServiceInstance instances = 1;
+}
+
+message ServiceInstance {
+  string serviceName = 1;
+  string serviceId = 2;
+  string address = 3;
+  int32 port = 4;
+  HealthStatus status = 5;
+  map<string, string> metadata = 6;
+  google.protobuf.Timestamp registeredAt = 7;
+  google.protobuf.Timestamp lastHealthCheck = 8;
+}
+
+message GetServicesRequest {}
+
+message GetServicesResponse {
+  repeated string serviceNames = 1;
+}
+
+message ReportHealthRequest {
+  string serviceId = 1;
+  HealthStatus status = 2;
+  string output = 3;
+}
+
+message ReportHealthResponse {
+  bool success = 1;
+}
+
+service DiscoveryRegistry {
+  rpc Register (RegisterServiceRequest) returns (RegisterServiceResponse);
+  rpc Deregister (DeregisterServiceRequest) returns (DeregisterServiceResponse);
+  rpc GetInstances (GetInstancesRequest) returns (GetInstancesResponse);
+  rpc GetServices (GetServicesRequest) returns (GetServicesResponse);
+  rpc ReportHealth (ReportHealthRequest) returns (ReportHealthResponse);
+}
