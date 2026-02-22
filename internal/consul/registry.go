@@ -9,16 +9,18 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/api"
+	"github.com/toska-mesh/toska-mesh/internal/types"
 )
 
-// HealthStatus mirrors the mesh-level health enum.
-type HealthStatus int
+// HealthStatus is an alias for the shared health status type.
+type HealthStatus = types.HealthStatus
 
+// Re-export health status constants so existing consumers compile unchanged.
 const (
-	HealthUnknown   HealthStatus = iota
-	HealthHealthy
-	HealthUnhealthy
-	HealthDegraded
+	HealthUnknown   = types.HealthUnknown
+	HealthHealthy   = types.HealthHealthy
+	HealthUnhealthy = types.HealthUnhealthy
+	HealthDegraded  = types.HealthDegraded
 )
 
 // Instance represents a service instance stored in Consul.

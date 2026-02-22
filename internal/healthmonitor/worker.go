@@ -74,23 +74,48 @@ func (w *Worker) probeAll(ctx context.Context) {
 		return
 	}
 
-	for _, serviceName := range services {
-		instances, err := w.registry.GetInstances(serviceName)
-		if err != nil {
-			w.logger.Error("failed to list instances", "service", serviceName, "error", err)
-			continue
-		}
+	// Collect all live service IDs so we can evict stale cache entries.
+	var liveIDsMu sync.Mutex
+	liveIDs := make(map[string]struct{})
 
-		// Fan out: probe all instances concurrently.
-		var wg sync.WaitGroup
-		for _, inst := range instances {
-			wg.Add(1)
-			go func(inst consul.Instance) {
-				defer wg.Done()
-				w.probeInstance(ctx, inst)
-			}(inst)
+	// Fan out at the service level so slow services don't block others.
+	var svcWg sync.WaitGroup
+	for _, serviceName := range services {
+		svcWg.Add(1)
+		go func(serviceName string) {
+			defer svcWg.Done()
+
+			instances, err := w.registry.GetInstances(serviceName)
+			if err != nil {
+				w.logger.Error("failed to list instances", "service", serviceName, "error", err)
+				return
+			}
+
+			liveIDsMu.Lock()
+			for _, inst := range instances {
+				liveIDs[inst.ServiceID] = struct{}{}
+			}
+			liveIDsMu.Unlock()
+
+			// Fan out: probe all instances concurrently.
+			var instWg sync.WaitGroup
+			for _, inst := range instances {
+				instWg.Add(1)
+				go func(inst consul.Instance) {
+					defer instWg.Done()
+					w.probeInstance(ctx, inst)
+				}(inst)
+			}
+			instWg.Wait()
+		}(serviceName)
+	}
+	svcWg.Wait()
+
+	// Evict cache entries for services no longer registered in Consul.
+	for _, cached := range w.cache.GetAll() {
+		if _, ok := liveIDs[cached.ServiceID]; !ok {
+			w.cache.Remove(cached.ServiceID)
 		}
-		wg.Wait()
 	}
 }
 
@@ -206,7 +231,7 @@ func (w *Worker) getBreaker(serviceID string) *CircuitBreaker {
 	}
 
 	breakDuration := w.config.ProbeInterval * 2
-	cb := NewCircuitBreaker(w.config.FailureThreshold, breakDuration)
+	cb := NewCircuitBreakerWithRecovery(w.config.FailureThreshold, w.config.RecoveryThreshold, breakDuration)
 	w.breakers[serviceID] = cb
 	return cb
 }

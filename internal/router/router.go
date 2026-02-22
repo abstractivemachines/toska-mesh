@@ -3,7 +3,10 @@
 package router
 
 import (
+	"strings"
 	"time"
+
+	"github.com/toska-mesh/toska-mesh/internal/types"
 )
 
 // Strategy defines the load balancing algorithm to use.
@@ -20,16 +23,16 @@ const (
 // ParseStrategy parses a strategy name (case-insensitive) into a Strategy.
 // Returns RoundRobin if the name is unrecognized.
 func ParseStrategy(name string) Strategy {
-	switch name {
-	case "RoundRobin", "roundrobin":
+	switch strings.ToLower(name) {
+	case "roundrobin", "round_robin":
 		return RoundRobin
-	case "LeastConnections", "leastconnections":
+	case "leastconnections", "least_connections":
 		return LeastConnections
-	case "Random", "random":
+	case "random":
 		return Random
-	case "WeightedRoundRobin", "weightedroundrobin":
+	case "weightedroundrobin", "weighted_round_robin":
 		return WeightedRoundRobin
-	case "IPHash", "iphash":
+	case "iphash", "ip_hash":
 		return IPHash
 	default:
 		return RoundRobin
@@ -53,14 +56,15 @@ func (s Strategy) String() string {
 	}
 }
 
-// HealthStatus represents the health state of a service instance.
-type HealthStatus int
+// HealthStatus is an alias for the shared health status type.
+type HealthStatus = types.HealthStatus
 
+// Re-export health status constants so existing consumers compile unchanged.
 const (
-	HealthUnknown   HealthStatus = iota
-	HealthHealthy
-	HealthUnhealthy
-	HealthDegraded
+	HealthUnknown   = types.HealthUnknown
+	HealthHealthy   = types.HealthHealthy
+	HealthUnhealthy = types.HealthUnhealthy
+	HealthDegraded  = types.HealthDegraded
 )
 
 // Instance represents a registered service instance available for routing.

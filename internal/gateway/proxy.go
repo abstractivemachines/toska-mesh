@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"math"
@@ -35,8 +36,31 @@ func NewProxy(routes *RouteTable, resilience ResilienceConfig, logger *slog.Logg
 	}
 }
 
+// bufferedResponse holds a captured upstream response so the proxy can
+// inspect the status code before committing bytes to the client.
+type bufferedResponse struct {
+	statusCode int
+	header     http.Header
+	body       []byte
+}
+
+// writeTo flushes the buffered response to the client.
+func (br *bufferedResponse) writeTo(w http.ResponseWriter) {
+	for k, vv := range br.header {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(br.statusCode)
+	w.Write(br.body)
+}
+
+// maxRequestBody is the maximum allowed size for incoming client request bodies (10MB).
+const maxRequestBody = 10 << 20
+
 // ServeHTTP handles an incoming request by routing it to a backend service.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	prefix := p.routes.Prefix()
 
 	serviceName, remainder, ok := ParseServiceFromPath(prefix, r.URL.Path)
@@ -54,6 +78,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Attempt the request with retries.
 	var lastErr error
 	var lastStatus int
+	var lastResp *bufferedResponse
 
 	for attempt := range p.resilience.RetryCount + 1 {
 		if attempt > 0 {
@@ -80,24 +105,29 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		status, err := p.forward(w, r, backend, remainder)
-		if err == nil && status < 500 {
+		br, err := p.forward(r, backend, remainder)
+		if err == nil && br.statusCode < 500 {
 			cb.RecordSuccess()
-			return // response already written
+			br.writeTo(w)
+			return
 		}
 
 		// Record failure for circuit breaker.
 		cb.RecordFailure()
 		lastErr = err
-		lastStatus = status
-
-		// Don't retry if response was already partially written.
-		if err == nil {
-			return
+		if br != nil {
+			lastStatus = br.statusCode
+			lastResp = br
 		}
 	}
 
-	// All attempts exhausted.
+	// All attempts exhausted — write the best response we have.
+	if lastResp != nil {
+		// We got a 5xx from upstream; forward it to the client.
+		lastResp.writeTo(w)
+		return
+	}
+
 	if lastErr != nil {
 		p.logger.Error("upstream request failed after retries",
 			"service", serviceName,
@@ -110,10 +140,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "upstream request failed", lastStatus)
 }
 
-func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, backend *Backend, remainder string) (int, error) {
+func (p *Proxy) forward(r *http.Request, backend *Backend, remainder string) (*bufferedResponse, error) {
 	backendURL, err := url.Parse(backend.Address)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	// Build upstream request.
@@ -128,23 +158,27 @@ func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, backend *Backend
 	// Forward hop-by-hop headers.
 	outReq.Header.Del("Connection")
 
+	// Limit the upstream response body to 10MB to prevent memory exhaustion.
+	const maxResponseBody = 10 << 20
+
 	resp, err := p.transport.RoundTrip(outReq)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers.
-	for k, vv := range resp.Header {
-		for _, v := range vv {
-			w.Header().Add(k, v)
-		}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	if err != nil {
+		return nil, err
 	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
 
-	return resp.StatusCode, nil
+	return &bufferedResponse{
+		statusCode: resp.StatusCode,
+		header:     resp.Header.Clone(),
+		body:       body,
+	}, nil
 }
+
 
 func (p *Proxy) retryDelay(attempt int) time.Duration {
 	base := float64(p.resilience.RetryBaseDelay)
@@ -153,7 +187,7 @@ func (p *Proxy) retryDelay(attempt int) time.Duration {
 	return time.Duration(exponential + jitter)
 }
 
-var errCircuitOpen = jwtError("circuit breaker open")
+var errCircuitOpen = errors.New("circuit breaker open")
 
 // --- Breaker map ---
 

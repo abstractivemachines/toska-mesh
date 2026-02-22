@@ -100,6 +100,28 @@ func TestBreaker_FailureInHalfOpenReopens(t *testing.T) {
 	}
 }
 
+func TestBreaker_HalfOpenAllowsOnlyOneRequest(t *testing.T) {
+	cb := NewCircuitBreaker(1, 50*time.Millisecond)
+
+	now := time.Now()
+	cb.now = func() time.Time { return now }
+
+	cb.RecordFailure()
+
+	// Advance past break duration.
+	now = now.Add(100 * time.Millisecond)
+
+	// First call transitions to half-open and allows one request.
+	if !cb.Allow() {
+		t.Fatal("expected first Allow() = true in half-open")
+	}
+
+	// Second call should be blocked — only one probe allowed.
+	if cb.Allow() {
+		t.Fatal("expected second Allow() = false in half-open (only one probe allowed)")
+	}
+}
+
 func TestBreaker_SuccessResetsFailureCount(t *testing.T) {
 	cb := NewCircuitBreaker(3, 10*time.Second)
 

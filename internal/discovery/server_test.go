@@ -38,7 +38,7 @@ func TestResolveAddress_KeepsRoutableAddress(t *testing.T) {
 	ctx := peer.NewContext(context.Background(), &peer.Peer{
 		Addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.99"), Port: 50000},
 	})
-	got := resolveAddress("192.168.1.50", ctx)
+	got := resolveAddress(ctx, "192.168.1.50")
 	if got != "192.168.1.50" {
 		t.Errorf("expected 192.168.1.50, got %s", got)
 	}
@@ -48,7 +48,7 @@ func TestResolveAddress_ReplacesLoopbackWithPeerIP(t *testing.T) {
 	ctx := peer.NewContext(context.Background(), &peer.Peer{
 		Addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.99"), Port: 50000},
 	})
-	got := resolveAddress("127.0.0.1", ctx)
+	got := resolveAddress(ctx, "127.0.0.1")
 	if got != "10.0.0.99" {
 		t.Errorf("expected 10.0.0.99, got %s", got)
 	}
@@ -58,7 +58,7 @@ func TestResolveAddress_ReplacesEmptyWithPeerIP(t *testing.T) {
 	ctx := peer.NewContext(context.Background(), &peer.Peer{
 		Addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.99"), Port: 50000},
 	})
-	got := resolveAddress("", ctx)
+	got := resolveAddress(ctx, "")
 	if got != "10.0.0.99" {
 		t.Errorf("expected 10.0.0.99, got %s", got)
 	}
@@ -68,7 +68,7 @@ func TestResolveAddress_FallsBackToRequested(t *testing.T) {
 	ctx := peer.NewContext(context.Background(), &peer.Peer{
 		Addr: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 50000},
 	})
-	got := resolveAddress("0.0.0.0", ctx)
+	got := resolveAddress(ctx, "0.0.0.0")
 	if got != "0.0.0.0" {
 		t.Errorf("expected 0.0.0.0, got %s", got)
 	}

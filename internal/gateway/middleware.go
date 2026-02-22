@@ -66,16 +66,41 @@ type RateLimiter struct {
 }
 
 type bucket struct {
-	count    int
-	resetAt  time.Time
+	count   int
+	resetAt time.Time
 }
 
 // NewRateLimiter creates a rate limiter with the given per-window limit.
+// It starts a background goroutine that evicts expired buckets every 2x window
+// to prevent unbounded memory growth.
 func NewRateLimiter(limit int, windowSeconds int) *RateLimiter {
-	return &RateLimiter{
+	rl := &RateLimiter{
 		buckets: make(map[string]*bucket),
 		limit:   limit,
 		window:  time.Duration(windowSeconds) * time.Second,
+	}
+	go rl.evictLoop()
+	return rl
+}
+
+// evictLoop periodically removes expired buckets to bound memory usage.
+func (rl *RateLimiter) evictLoop() {
+	interval := rl.window * 2
+	if interval < 10*time.Second {
+		interval = 10 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		rl.mu.Lock()
+		now := time.Now()
+		for key, b := range rl.buckets {
+			if now.After(b.resetAt) {
+				delete(rl.buckets, key)
+			}
+		}
+		rl.mu.Unlock()
 	}
 }
 

@@ -3,30 +3,20 @@ package healthmonitor
 import (
 	"sync"
 	"time"
+
+	"github.com/toska-mesh/toska-mesh/internal/types"
 )
 
-// HealthStatus mirrors the mesh-level health enum.
-type HealthStatus int
+// HealthStatus is an alias for the shared health status type.
+type HealthStatus = types.HealthStatus
 
+// Re-export health status constants with this package's naming convention.
 const (
-	StatusUnknown   HealthStatus = iota
-	StatusHealthy
-	StatusUnhealthy
-	StatusDegraded
+	StatusUnknown   = types.HealthUnknown
+	StatusHealthy   = types.HealthHealthy
+	StatusUnhealthy = types.HealthUnhealthy
+	StatusDegraded  = types.HealthDegraded
 )
-
-func (s HealthStatus) String() string {
-	switch s {
-	case StatusHealthy:
-		return "Healthy"
-	case StatusUnhealthy:
-		return "Unhealthy"
-	case StatusDegraded:
-		return "Degraded"
-	default:
-		return "Unknown"
-	}
-}
 
 // MonitoredInstance holds the latest probe result for a service instance.
 type MonitoredInstance struct {
@@ -111,6 +101,38 @@ func (c *Cache) Get(serviceID string) *MonitoredInstance {
 	}
 	copy := *inst
 	return &copy
+}
+
+// Remove deletes a service instance from the cache.
+func (c *Cache) Remove(serviceID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.instances, serviceID)
+}
+
+// RemoveByService deletes all instances matching the given service name.
+func (c *Cache) RemoveByService(serviceName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for id, inst := range c.instances {
+		if inst.ServiceName == serviceName {
+			delete(c.instances, id)
+		}
+	}
+}
+
+// EvictOlderThan removes entries whose last probe is older than the given cutoff.
+func (c *Cache) EvictOlderThan(cutoff time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for id, inst := range c.instances {
+		if inst.LastProbe.Before(cutoff) {
+			delete(c.instances, id)
+		}
+	}
 }
 
 // PreviousStatus returns the last known status for a service ID.

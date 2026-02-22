@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestProxy_RoutesToBackend(t *testing.T) {
@@ -63,6 +64,50 @@ func TestProxy_Returns502ForUnknownService(t *testing.T) {
 
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d", w.Code)
+	}
+}
+
+func TestProxy_Retries5xxAndReturnsLastResponse(t *testing.T) {
+	attempts := 0
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			http.Error(w, "error", http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprintln(w, "recovered")
+	}))
+	defer backend.Close()
+
+	rt := &RouteTable{
+		config: RoutingConfig{RoutePrefix: "/api/"},
+		routes: map[string]*ServiceRoute{
+			"svc": {
+				ServiceName: "svc",
+				Backends:    []Backend{{ServiceID: "svc-1", Address: backend.URL}},
+			},
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	proxy := NewProxy(rt, ResilienceConfig{
+		RetryCount:              3,
+		RetryBaseDelay:          1 * time.Millisecond,
+		RetryBackoffExponent:    1.0,
+		RetryJitterMax:          0,
+		BreakerFailureThreshold: 10,
+		BreakerBreakDuration:    60_000_000_000,
+	}, logger)
+
+	req := httptest.NewRequest("GET", "/api/svc/data", nil)
+	w := httptest.NewRecorder()
+	proxy.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 after retry recovery, got %d: %s", w.Code, w.Body.String())
+	}
+	if attempts != 3 {
+		t.Fatalf("expected 3 attempts, got %d", attempts)
 	}
 }
 

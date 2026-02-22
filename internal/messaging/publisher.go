@@ -5,10 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+// idCounter provides a monotonically increasing suffix to ensure unique event IDs
+// even when multiple events are generated within the same nanosecond.
+var idCounter atomic.Uint64
 
 // MassTransit wraps messages in an envelope for compatibility with C# MassTransit consumers.
 // See: https://masstransit.io/documentation/concepts/messages#message-headers
@@ -134,6 +139,6 @@ func eventMeta(event any) (typeName, exchangeName string) {
 }
 
 func generateID() string {
-	// Use timestamp + random suffix for simplicity; can switch to UUID later.
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	seq := idCounter.Add(1)
+	return fmt.Sprintf("%d-%d", time.Now().UnixNano(), seq)
 }

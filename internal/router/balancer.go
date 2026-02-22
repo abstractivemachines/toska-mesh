@@ -1,6 +1,7 @@
 package router
 
 import (
+	"math"
 	"math/rand/v2"
 	"strconv"
 	"sync"
@@ -279,6 +280,9 @@ func fnv1a(s string) uint32 {
 }
 
 func abs64(n int64) int64 {
+	if n == math.MinInt64 {
+		return math.MaxInt64
+	}
 	if n < 0 {
 		return -n
 	}

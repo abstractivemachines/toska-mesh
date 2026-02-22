@@ -58,7 +58,7 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterServiceRequest) (
 	}
 
 	// Resolve address: replace loopback/unspecified with caller's actual IP.
-	address := resolveAddress(req.Address, ctx)
+	address := resolveAddress(ctx, req.Address)
 
 	metadata := make(map[string]string)
 	for k, v := range req.Metadata {
@@ -104,7 +104,7 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterServiceRequest) (
 	s.mu.Unlock()
 
 	// Publish event.
-	_ = s.publisher.Publish(ctx, messaging.ServiceRegisteredEvent{
+	if err := s.publisher.Publish(ctx, messaging.ServiceRegisteredEvent{
 		EventID:     fmt.Sprintf("%d", time.Now().UnixNano()),
 		Timestamp:   now,
 		ServiceID:   serviceID,
@@ -112,7 +112,9 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterServiceRequest) (
 		Address:     address,
 		Port:        int(req.Port),
 		Metadata:    metadata,
-	})
+	}); err != nil {
+		s.logger.Warn("failed to publish registration event", "service_id", serviceID, "error", err)
+	}
 
 	s.logger.Info("service registered",
 		"service_id", serviceID,
@@ -153,13 +155,15 @@ func (s *Server) Deregister(ctx context.Context, req *pb.DeregisterServiceReques
 	s.mu.Unlock()
 
 	// Publish event.
-	_ = s.publisher.Publish(ctx, messaging.ServiceDeregisteredEvent{
+	if err := s.publisher.Publish(ctx, messaging.ServiceDeregisteredEvent{
 		EventID:     fmt.Sprintf("%d", time.Now().UnixNano()),
 		Timestamp:   now,
 		ServiceID:   req.ServiceId,
 		ServiceName: serviceName,
 		Reason:      "Manual deregistration",
-	})
+	}); err != nil {
+		s.logger.Warn("failed to publish deregistration event", "service_id", req.ServiceId, "error", err)
+	}
 
 	return &pb.DeregisterServiceResponse{Removed: true}, nil
 }
@@ -232,7 +236,7 @@ func (s *Server) ReportHealth(ctx context.Context, req *pb.ReportHealthRequest) 
 
 	// Publish health change event if status actually changed.
 	if info != nil && previousStatus != newStatus {
-		_ = s.publisher.Publish(ctx, messaging.ServiceHealthChangedEvent{
+		if err := s.publisher.Publish(ctx, messaging.ServiceHealthChangedEvent{
 			EventID:           fmt.Sprintf("%d", time.Now().UnixNano()),
 			Timestamp:         now,
 			ServiceID:         req.ServiceId,
@@ -240,7 +244,9 @@ func (s *Server) ReportHealth(ctx context.Context, req *pb.ReportHealthRequest) 
 			PreviousStatus:    healthStatusName(previousStatus),
 			CurrentStatus:     healthStatusName(newStatus),
 			HealthCheckOutput: req.Output,
-		})
+		}); err != nil {
+			s.logger.Warn("failed to publish health change event", "service_id", req.ServiceId, "error", err)
+		}
 	}
 
 	return &pb.ReportHealthResponse{Success: true}, nil
@@ -250,7 +256,7 @@ func (s *Server) ReportHealth(ctx context.Context, req *pb.ReportHealthRequest) 
 
 // resolveAddress replaces loopback/unspecified addresses with the caller's
 // actual IP extracted from the gRPC peer context.
-func resolveAddress(requested string, ctx context.Context) string {
+func resolveAddress(ctx context.Context, requested string) string {
 	if isRoutable(requested) {
 		return requested
 	}
@@ -341,14 +347,5 @@ func fromProtoHealth(s pb.HealthStatus) consul.HealthStatus {
 }
 
 func healthStatusName(s consul.HealthStatus) string {
-	switch s {
-	case consul.HealthHealthy:
-		return "Healthy"
-	case consul.HealthUnhealthy:
-		return "Unhealthy"
-	case consul.HealthDegraded:
-		return "Degraded"
-	default:
-		return "Unknown"
-	}
+	return s.String()
 }

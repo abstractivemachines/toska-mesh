@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -80,8 +81,11 @@ func run(logger *slog.Logger) error {
 	handler = gateway.RequestLogging(logger, handler)
 
 	server := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: handler,
+		Addr:         ":" + cfg.Port,
+		Handler:      handler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
@@ -173,36 +177,12 @@ func envOr(key, fallback string) string {
 }
 
 func splitComma(s string) []string {
-	parts := make([]string, 0)
-	for _, p := range splitOnComma(s) {
-		p = trimSpace(p)
+	var parts []string
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
 		if p != "" {
 			parts = append(parts, p)
 		}
 	}
 	return parts
-}
-
-func splitOnComma(s string) []string {
-	var result []string
-	start := 0
-	for i := range len(s) {
-		if s[i] == ',' {
-			result = append(result, s[start:i])
-			start = i + 1
-		}
-	}
-	result = append(result, s[start:])
-	return result
-}
-
-func trimSpace(s string) string {
-	i, j := 0, len(s)
-	for i < j && s[i] == ' ' {
-		i++
-	}
-	for j > i && s[j-1] == ' ' {
-		j--
-	}
-	return s[i:j]
 }
