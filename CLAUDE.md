@@ -7,7 +7,7 @@ This directory contains the Go control plane for the ToskaMesh service mesh.
 All commands run from this directory (`toska-mesh/`).
 
 ```bash
-make generate   # regenerate Go protobuf from ../proto/
+make generate   # regenerate Go protobuf from ../toska-mesh-proto/
 make build      # build all binaries → bin/
 make test       # go test ./...
 make lint       # golangci-lint (skipped if not installed)
@@ -55,7 +55,7 @@ toska-mesh/
 
 ## Protobuf
 
-The canonical proto definitions live in `../proto/`. Both this Go control plane and the C# SDK (`toska-mesh-cs/`) generate from the same source. Run `make generate` after modifying any `.proto` file.
+The canonical proto definitions live in `../toska-mesh-proto/`. Both this Go control plane and the C# SDK (`toska-mesh-cs/`) generate from the same source. Run `make generate` after modifying any `.proto` file.
 
 ## Coding Conventions
 

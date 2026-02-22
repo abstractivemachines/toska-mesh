@@ -1,5 +1,5 @@
 MODULE   := github.com/toska-mesh/toska-mesh
-PROTO_DIR := ../proto
+PROTO_DIR := ../toska-mesh-proto
 PB_DIR   := pkg/meshpb
 CMDS     := gateway discovery healthmonitor
 BIN_DIR  := bin
