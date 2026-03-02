@@ -46,7 +46,7 @@ func run(logger *slog.Logger) error {
 
 	// Build the handler chain.
 	proxy := gateway.NewProxy(routeTable, cfg.Resilience, logger)
-	dashboard := gateway.NewDashboardProxy(cfg.Dashboard, logger)
+	dashboard := gateway.NewDashboardProxy(cfg.Dashboard, registry, logger)
 
 	mux := http.NewServeMux()
 
@@ -164,6 +164,9 @@ func loadConfig() gateway.Config {
 	}
 	if v := os.Getenv("DASHBOARD_HEALTHMONITOR_URL"); v != "" {
 		cfg.Dashboard.HealthMonitorBaseURL = v
+	}
+	if v := os.Getenv("MESH_SERVICE_AUTH_SECRET"); v != "" {
+		cfg.Dashboard.ServiceAuthSecret = v
 	}
 
 	return cfg

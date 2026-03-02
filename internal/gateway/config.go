@@ -104,4 +104,5 @@ type DashboardConfig struct {
 	TracingBaseURL       string
 	DiscoveryBaseURL     string
 	HealthMonitorBaseURL string
+	ServiceAuthSecret    string // shared secret for service-to-service JWT
 }
